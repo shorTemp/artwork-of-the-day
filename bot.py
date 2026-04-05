@@ -30,7 +30,9 @@ BLOCKED_TITLE_TERMS = {
     "odalisque", "harem", "courtesan",
 }
 
-bot = commands.Bot(command_prefix="!", intents=discord.Intents.default())
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 
 def is_family_friendly(p):
