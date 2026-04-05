@@ -104,7 +104,7 @@ def build_embed(painting, iiif_url):
 
     image_id = painting.get("image_id")
     if image_id:
-        embed.set_image(url=f"{iiif_url}/{image_id}/full/843%2C/0/default.jpg")
+        embed.set_image(url=f"{iiif_url}/{image_id}/full/full/0/default.jpg")
 
     alt = painting.get("thumbnail") or {}
     if alt.get("alt_text"):
