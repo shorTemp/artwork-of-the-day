@@ -1,0 +1,12 @@
+[service]
+name = "artwork-of-the-day"
+[service.env]
+HISTORY_DB = "/data/history.db"
+[[services]]
+name = "bot"
+root = "."
+buildCommand = ""
+startCommand = "python bot.py"
+[mount]
+source = "data"
+dest = "/data"
