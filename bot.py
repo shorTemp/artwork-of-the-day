@@ -119,11 +119,16 @@ async def download_image(painting, iiif_url):
     if not image_id:
         return None
     url = f"{iiif_url}/{image_id}/full/843,/0/default.jpg"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
-            if resp.status == 200:
-                data = await resp.read()
-                return discord.File(io.BytesIO(data), filename="artwork.jpg")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as resp:
+                print(f"Image download: {resp.status} from {url}", flush=True)
+                if resp.status == 200:
+                    data = await resp.read()
+                    print(f"Image size: {len(data)} bytes", flush=True)
+                    return discord.File(io.BytesIO(data), filename="artwork.jpg")
+    except Exception as e:
+        print(f"Image download error: {e}", flush=True)
     return None
 
 
