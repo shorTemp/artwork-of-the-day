@@ -132,6 +132,15 @@ async def on_ready():
     print(f"Logged in as {bot.user}", flush=True)
     if not daily_painting.is_running():
         daily_painting.start()
+    # Bind to PORT so Railway knows the container is alive
+    if "PORT" in os.environ:
+        from aiohttp import web
+        app = web.Application()
+        app.router.add_get("/", lambda r: web.Response(text="OK"))
+        runner = web.AppRunner(app)
+        await runner.setup()
+        await web.TCPSite(runner, "0.0.0.0", int(os.environ["PORT"])).start()
+        print(f"Listening on port {os.environ['PORT']}", flush=True)
 
 
 @tasks.loop(time=POST_TIME)
