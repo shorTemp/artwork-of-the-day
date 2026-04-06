@@ -132,6 +132,15 @@ async def on_ready():
     print(f"Logged in as {bot.user}")
     if not daily_painting.is_running():
         daily_painting.start()
+    # Start a minimal HTTP server so Railway knows we're alive
+    from aiohttp import web
+    app = web.Application()
+    app.router.add_get("/", lambda r: web.Response(text="OK"))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 8080))
+    await web.TCPSite(runner, "0.0.0.0", port).start()
+    print(f"Health check on port {port}")
 
 
 @tasks.loop(time=POST_TIME)
