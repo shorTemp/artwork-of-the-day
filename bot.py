@@ -120,7 +120,7 @@ async def download_image(painting, iiif_url):
         return None
     url = f"{iiif_url}/{image_id}/full/843,/0/default.jpg"
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(headers={"User-Agent": "ArtworkOfTheDayBot/1.0"}) as session:
             async with session.get(url) as resp:
                 print(f"Image download: {resp.status} from {url}", flush=True)
                 if resp.status == 200:
