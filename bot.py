@@ -5,6 +5,7 @@ from discord.ext import commands, tasks
 from datetime import time
 import aiohttp
 import asyncio
+import io
 import history
 
 BOT_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
@@ -104,13 +105,26 @@ def build_embed(painting, iiif_url):
 
     image_id = painting.get("image_id")
     if image_id:
-        embed.set_image(url=f"{iiif_url}/{image_id}/full/full/0/default.jpg")
+        embed.set_image(url=f"attachment://artwork.jpg")
 
     alt = painting.get("thumbnail") or {}
     if alt.get("alt_text"):
         embed.set_footer(text=alt["alt_text"])
 
     return embed
+
+
+async def download_image(painting, iiif_url):
+    image_id = painting.get("image_id")
+    if not image_id:
+        return None
+    url = f"{iiif_url}/{image_id}/full/843,/0/default.jpg"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            if resp.status == 200:
+                data = await resp.read()
+                return discord.File(io.BytesIO(data), filename="artwork.jpg")
+    return None
 
 
 @bot.event
@@ -129,7 +143,8 @@ async def daily_painting():
     if not painting:
         await channel.send("Couldn't fetch an artwork today — try again tomorrow! 🖼️")
         return
-    await channel.send(embed=build_embed(painting, iiif_url))
+    file = await download_image(painting, iiif_url)
+    await channel.send(embed=build_embed(painting, iiif_url), file=file)
 
 
 @bot.command()
@@ -140,7 +155,8 @@ async def artwork(ctx, *, subject: str = None):
         msg = f"Couldn't find an artwork about '{subject}'." if subject else "Couldn't fetch an artwork right now."
         await ctx.send(f"{msg} Try again!")
         return
-    await ctx.send(embed=build_embed(p, iiif_url))
+    file = await download_image(p, iiif_url)
+    await ctx.send(embed=build_embed(p, iiif_url), file=file)
 
 
 bot.run(BOT_TOKEN)
