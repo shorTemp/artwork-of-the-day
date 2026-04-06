@@ -1,11 +1,10 @@
 import os
 import random
+import io
 import discord
 from discord.ext import commands, tasks
 from datetime import time
 import aiohttp
-import asyncio
-import io
 import history
 
 BOT_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
@@ -46,7 +45,7 @@ def is_family_friendly(p):
     )
 
 
-async def fetch_painting(subject=None, max_attempts=5):
+async def fetch_artwork(subject=None, max_attempts=5):
     query = {"bool": {"must": [
         {"terms": {"artwork_type_title.keyword": ALLOWED_TYPES}},
         {"term": {"is_public_domain": True}},
@@ -74,7 +73,6 @@ async def fetch_painting(subject=None, max_attempts=5):
                 async with session.post(url, json=fetch_body) as resp:
                     data = await resp.json()
             except Exception:
-                await asyncio.sleep(1)
                 continue
             for p in data.get("data", []):
                 if is_family_friendly(p) and p["id"] not in seen:
@@ -83,17 +81,32 @@ async def fetch_painting(subject=None, max_attempts=5):
     return None, iiif_url
 
 
-def build_embed(painting, iiif_url):
-    title = painting.get("title", "Unknown Title")
-    artist = painting.get("artist_display", "Unknown Artist")
-    date = painting.get("date_display", "Unknown Date")
-    medium = painting.get("medium_display", "Unknown Medium")
-    dimensions = painting.get("dimensions", "Unknown Dimensions")
-    origin = painting.get("place_of_origin")
+async def download_image(artwork, iiif_url):
+    image_id = artwork.get("image_id")
+    if not image_id:
+        return None
+    url = f"{iiif_url}/{image_id}/full/843,/0/default.jpg"
+    try:
+        async with aiohttp.ClientSession(headers={"User-Agent": "ArtworkOfTheDayBot/1.0"}) as session:
+            async with session.get(url) as resp:
+                if resp.status == 200:
+                    return discord.File(io.BytesIO(await resp.read()), filename="artwork.jpg")
+    except Exception:
+        pass
+    return None
+
+
+def build_embed(artwork, iiif_url):
+    title = artwork.get("title", "Unknown Title")
+    artist = artwork.get("artist_display", "Unknown Artist")
+    date = artwork.get("date_display", "Unknown Date")
+    medium = artwork.get("medium_display", "Unknown Medium")
+    dimensions = artwork.get("dimensions", "Unknown Dimensions")
+    origin = artwork.get("place_of_origin")
 
     embed = discord.Embed(
         title=f"🎨 Artwork of the Day: {title}",
-        url=f"https://www.artic.edu/artworks/{painting['id']}",
+        url=f"https://www.artic.edu/artworks/{artwork['id']}",
         color=0xE4002B,
     )
     embed.add_field(name="Artist", value=artist, inline=True)
@@ -102,34 +115,13 @@ def build_embed(painting, iiif_url):
         embed.add_field(name="Origin", value=origin, inline=True)
     embed.add_field(name="Medium", value=medium, inline=False)
     embed.add_field(name="Dimensions", value=dimensions, inline=False)
-
-    image_id = painting.get("image_id")
-    if image_id:
-        embed.set_image(url=f"attachment://artwork.jpg")
-
-    alt = painting.get("thumbnail") or {}
-    if alt.get("alt_text"):
-        embed.set_footer(text=alt["alt_text"])
+    if artwork.get("image_id"):
+        embed.set_image(url="attachment://artwork.jpg")
+    alt = (artwork.get("thumbnail") or {}).get("alt_text")
+    if alt:
+        embed.set_footer(text=alt)
 
     return embed
-
-
-async def download_image(painting, iiif_url):
-    image_id = painting.get("image_id")
-    if not image_id:
-        return None
-    url = f"{iiif_url}/{image_id}/full/843,/0/default.jpg"
-    try:
-        async with aiohttp.ClientSession(headers={"User-Agent": "ArtworkOfTheDayBot/1.0"}) as session:
-            async with session.get(url) as resp:
-                print(f"Image download: {resp.status} from {url}", flush=True)
-                if resp.status == 200:
-                    data = await resp.read()
-                    print(f"Image size: {len(data)} bytes", flush=True)
-                    return discord.File(io.BytesIO(data), filename="artwork.jpg")
-    except Exception as e:
-        print(f"Image download error: {e}", flush=True)
-    return None
 
 
 @bot.event
@@ -137,7 +129,6 @@ async def on_ready():
     print(f"Logged in as {bot.user}", flush=True)
     if not daily_painting.is_running():
         daily_painting.start()
-    # Bind to PORT so Railway knows the container is alive
     if "PORT" in os.environ:
         from aiohttp import web
         app = web.Application()
@@ -145,7 +136,6 @@ async def on_ready():
         runner = web.AppRunner(app)
         await runner.setup()
         await web.TCPSite(runner, "0.0.0.0", int(os.environ["PORT"])).start()
-        print(f"Listening on port {os.environ['PORT']}", flush=True)
 
 
 @tasks.loop(time=POST_TIME)
@@ -153,25 +143,22 @@ async def daily_painting():
     channel = bot.get_channel(CHANNEL_ID)
     if not channel:
         return
-    painting, iiif_url = await fetch_painting()
-    if not painting:
+    art, iiif_url = await fetch_artwork()
+    if not art:
         await channel.send("Couldn't fetch an artwork today — try again tomorrow! 🖼️")
         return
-    file = await download_image(painting, iiif_url)
-    await channel.send(embed=build_embed(painting, iiif_url), file=file)
+    await channel.send(embed=build_embed(art, iiif_url), file=await download_image(art, iiif_url))
 
 
 @bot.command()
 async def artwork(ctx, *, subject: str = None):
     """Manually fetch a random artwork. Optionally provide a subject like !artwork trains"""
-    p, iiif_url = await fetch_painting(subject=subject)
-    if not p:
+    art, iiif_url = await fetch_artwork(subject=subject)
+    if not art:
         msg = f"Couldn't find an artwork about '{subject}'." if subject else "Couldn't fetch an artwork right now."
         await ctx.send(f"{msg} Try again!")
         return
-    file = await download_image(p, iiif_url)
-    await ctx.send(embed=build_embed(p, iiif_url), file=file)
+    await ctx.send(embed=build_embed(art, iiif_url), file=await download_image(art, iiif_url))
 
 
-print("Starting bot...", flush=True)
 bot.run(BOT_TOKEN)
